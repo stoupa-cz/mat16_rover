@@ -9,11 +9,13 @@
 
 import struct
 import time
+import threading
 import sys
 import atexit
 
 event_path = "/dev/input/event2"
 lcd_path = "/dev/lcd0"
+lcd_buffer = ''
 
 # long int, long int, unsigned short, unsigned short, unsigned int
 FORMAT = 'llHHI'
@@ -38,24 +40,40 @@ class Dir:
 			return '?'
 
 def init_lcd ():
-	lcd = open(lcd_path, 'w')
-	lcd.write('{:16s}'.format(''))
-	lcd.write('I {:c} Kamzici'.format(0x9d))
-	lcd.close()
+	global lcd_buffer
+	lcd_buffer = '{:16s}'.format('')
+	lcd_buffer += 'I {:c} Kamzici'.format(0x9d)
 
 def update_lcd (amount, direction):
-	lcd = open(lcd_path, 'w')
+	global lcd_buffer, repaint_lcd
 	bar = min(abs(amount / 3), 7);
-	lcd.write('{:12d} {:s} {:c}'.format(amount, Dir.get_string(direction), bar))
-	lcd.write('I {:c} Kamzici'.format(0x9d))
-	lcd.close()
+	lcd_buffer = '{:12d} {:s} {:c}'.format(amount, Dir.get_string(direction), bar)
+	lcd_buffer += 'I {:c} Kamzici'.format(0x9d)
+	repaint_lcd.set()
+
+def lcd_worker ():
+	global lcd_buffer, repaint_lcd
+	while (True):
+		repaint_lcd.wait()
+		repaint_lcd.clear()
+		print "repainting"
+		lcd = open(lcd_path, 'w')
+		lcd.write(lcd_buffer)
+		lcd.close()
 
 def goodbye ():
+	#t.join() # XXX
 	event_file.close()
 
 atexit.register(goodbye)
 
 init_lcd ()
+
+t = threading.Thread(target=lcd_worker)
+t.daemon = True # XXX Do stopping in a better way
+repaint_lcd = threading.Event()
+t.start()
+repaint_lcd.set()
 
 output = 0
 

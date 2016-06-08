@@ -7,11 +7,12 @@
 # Event handling copy&paste from:
 # http://stackoverflow.com/questions/5060710/format-of-dev-input-event/16682549
 
-import struct
-import time
-import threading
-import sys
 import atexit
+import glob
+import struct
+import sys
+import threading
+import time
 
 event_path = "/dev/input/event2"
 lcd_path = "/dev/lcd0"
@@ -61,6 +62,16 @@ def lcd_worker ():
 		lcd.write(lcd_buffer)
 		lcd.close()
 
+def card_worker ():
+	global lcd_buffer, repaint_lcd
+	while (True):
+		files = glob.glob('/media/*/rover.txt')
+		if (len(files) > 0):
+			with open(files[0]) as f:
+				lcd_buffer = f.read()
+			repaint_lcd.set()
+		time.sleep(1)
+
 def goodbye ():
 	#t.join() # XXX
 	event_file.close()
@@ -74,6 +85,10 @@ t.daemon = True # XXX Do stopping in a better way
 repaint_lcd = threading.Event()
 t.start()
 repaint_lcd.set()
+
+card_thread = threading.Thread(target=card_worker)
+card_thread.daemon = True # XXX Do stopping in a better way
+card_thread.start()
 
 output = 0
 

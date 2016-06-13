@@ -42,18 +42,6 @@ class Dir:
 		else:
 			return '?'
 
-def init_lcd ():
-	global lcd_buffer
-	lcd_buffer = '{:16s}'.format('')
-	lcd_buffer += 'I {:c} Kamzici'.format(0x9d)
-
-def update_lcd (amount, direction):
-	global lcd_buffer, repaint_lcd
-	bar = min(abs(amount / 3), 7);
-	lcd_buffer = '{:12d} {:s} {:c}'.format(amount, Dir.get_string(direction), bar)
-	lcd_buffer += 'I {:c} Kamzici'.format(0x9d)
-	repaint_lcd.set()
-
 def lcd_worker ():
 	global lcd_buffer, repaint_lcd
 	while (running):
@@ -98,13 +86,9 @@ def main ():
 	global event_file
 
 	atexit.register(goodbye)
-	init_lcd ()
 
 	t.start()
-	repaint_lcd.set()
 	card_thread.start()
-
-	output = 0
 
 	# open file in binary mode
 	event_file = open(event_path, "rb")
@@ -119,19 +103,14 @@ def main ():
 			if code == 113:
 				print("pushed")
 				direction = Dir.STOP
-				output = 0
 			elif code == 114:
 				print("down")
 				direction = Dir.DOWN
-				output -= 1
 			elif code == 115:
 				print("up")
 				direction = Dir.UP
-				output += 1
 			else:
 				print("unsupported code")
-
-			update_lcd(output, direction)
 
 		event = event_file.read(EVENT_SIZE)
 

@@ -12,13 +12,13 @@ import glob
 import os
 import struct
 import sys
+import select
 import threading
 import time
 
 event_path = "/dev/input/event2"
 lcd_path = "/dev/lcd0"
-lcd_buffer = ''
-running = True
+line_width = 16
 
 # long int, long int, unsigned short, unsigned short, unsigned int
 FORMAT = 'llHHI'
@@ -42,77 +42,167 @@ class Dir:
 		else:
 			return '?'
 
-def lcd_worker ():
-	global lcd_buffer, repaint_lcd
-	while (running):
-		repaint_lcd.wait()
-		repaint_lcd.clear()
-		print "Repainting"
-		lcd = open(lcd_path, 'w')
-		lcd.write(lcd_buffer)
-		lcd.close()
-	print 'Finishing lcd writer'
+class LCD:
+	_message = ''
+	_repaint = None
+	_running = True
+	_thread = None
+	_lcd = None
 
-def card_worker ():
-	global lcd_buffer, repaint_lcd
-	while (running):
-		lcd_buffer_old = lcd_buffer
+	def __init__(self):
+		LCD._thread = threading.Thread(target=LCD._worker)
+		LCD._lcd = open(lcd_path, 'w')
+		LCD._repaint = threading.Event()
+		LCD._thread.start()
+
+	@staticmethod
+	def _worker():
+		while(LCD._running):
+			LCD._repaint.wait()
+			LCD._repaint.clear()
+			print 'Repainting LCD'
+			LCD._lcd.write(' ' if LCD._message == '' else LCD._message)
+			LCD._lcd.flush()
+		print 'Finishing LCD handler'
+
+	@staticmethod
+	def set_message(message):
+		LCD._message = message
+		LCD._repaint.set()
+
+	@staticmethod
+	def get_message():
+		return LCD._message
+
+	@staticmethod
+	def stop(msg):
+		LCD._message = msg
+		LCD._repaint.set()
+		LCD._running = False
+		LCD._repaint.set()
+		LCD._thread.join()
+		LCD._lcd.close()
+
+class IdleOutput:
+	def __init__(self, text):
+		self.text = text
+		LCD.set_message(text[0:32])
+
+	def get_text(self):
+		return self.text
+
+class CardOutput:
+	def __init__(self, text):
+		self.line = 0
+		self.text = text
+		self.event_file = None
+		LCD.set_message(text[0:32])
+
+	def scroll(self, direction):
+		if (direction == Dir.DOWN):
+			if (len(self.text) > self.line * line_width + 2 * line_width):
+				self.line = self.line + 1;
+		elif (direction == Dir.UP):
+			self.line = max(self.line - 1, 0);
+
+	def get_text(self):
+		return self.text
+
+	def direction_handler(self, direction):
+		self.scroll(direction)
+		LCD.set_message(self.get_text_buffer())
+
+	def get_text_buffer(self):
+		return self.text[self.line * line_width:self.line * line_width + 2 * line_width]
+
+class InputHandler:
+	def __init__(self):
+		self.subscribers = []
+		self.running = True
+		self.thread = threading.Thread(target=self.event_handler)
+		self.thread.start()
+
+	# XXX Dtor is never called
+	def __del__(self):
+		print "InputHandler destructor called"
+		self.running = False
+		self.thread.join()
+		if self.event_file is not None and not self.event_file.closed:
+			self.event_file.close()
+
+	def subscribe(self, obj):
+		self.subscribers.append(obj)
+
+	def unsubscribe(self, obj):
+		try:
+			self.subscribers.remove(obj)
+		except ValueError:
+			return
+
+	def event_handler(self):
+		self.event_file = open(event_path, "rb")
+
+		while self.event_file and self.running:
+			r, w, e = select.select([ self.event_file ], [], [], 1)
+			if self.event_file in r:
+				event = self.event_file.read(EVENT_SIZE)
+			else:
+				continue
+
+			(tv_sec, tv_usec, type, code, value) = struct.unpack(FORMAT, event)
+
+			direction = Dir.UNKNOWN
+
+			if (type != 0 or code != 0) and value != 0:
+				if code == 113:
+					print("pushed")
+					direction = Dir.STOP
+				elif code == 114:
+					print("vol down (=up)")
+					direction = Dir.UP
+				elif code == 115:
+					print("vol up (=down)")
+					direction = Dir.DOWN
+				else:
+					print("unsupported code")
+
+			if (direction != Dir.UNKNOWN):
+				for subscriber in self.subscribers:
+					subscriber.direction_handler(direction)
+
+def goodbye ():
+	print "Cleaning up"
+	LCD.stop('{:16s}{:16s}'.format('System was', 'stopped.'))
+
+def main ():
+	atexit.register(goodbye)
+
+	lcd = LCD()
+
+	card_idle_msg = 'Please insert a memory card.'
+	output = IdleOutput(card_idle_msg)
+	input = InputHandler()
+	message = LCD.get_message()
+
+	while (True):
+		message_old = message
 		files = glob.glob('/media/*/rover.txt')
 		if (len(files) > 0):
 			with open(files[0]) as f:
-				lcd_buffer = f.read()
-		else:
-			lcd_buffer = 'Please insert a memory card.'
-		if lcd_buffer != lcd_buffer_old:
-			repaint_lcd.set()
+				try:
+					message = f.read()
+				except:
+					message = ''
+					continue
+				if message != message_old or not isinstance(output, CardOutput):
+					input.unsubscribe(output)
+					output = CardOutput(message)
+					input.subscribe(output)
+		elif (not isinstance(output, IdleOutput)):
+			input.unsubscribe(output)
+			output = IdleOutput(card_idle_msg)
+			message = output.get_text()
 		time.sleep(0.1)
-	print 'Finishing card reader'
-
-def goodbye ():
-	global lcd_buffer, running
-	print "Cleaning up"
-	running = False
-	card_thread.join()
-	lcd_buffer = '{:16s}{:16s}'.format('System was', 'stopped.')
-	repaint_lcd.set()
-	t.join()
-	event_file.close()
-
-t = threading.Thread(target=lcd_worker)
-repaint_lcd = threading.Event()
-card_thread = threading.Thread(target=card_worker)
-
-def main ():
-	global event_file
-
-	atexit.register(goodbye)
-
-	t.start()
-	card_thread.start()
-
-	# open file in binary mode
-	event_file = open(event_path, "rb")
-	event = event_file.read(EVENT_SIZE)
-
-	while event_file:
-		(tv_sec, tv_usec, type, code, value) = struct.unpack(FORMAT, event)
-
-		direction = Dir.UNKNOWN
-
-		if (type != 0 or code != 0) and value != 0:
-			if code == 113:
-				print("pushed")
-				direction = Dir.STOP
-			elif code == 114:
-				print("down")
-				direction = Dir.DOWN
-			elif code == 115:
-				print("up")
-				direction = Dir.UP
-			else:
-				print("unsupported code")
-
-		event = event_file.read(EVENT_SIZE)
 
 if __name__ == '__main__':
 	try:

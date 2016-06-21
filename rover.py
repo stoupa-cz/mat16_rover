@@ -19,6 +19,8 @@ import time
 event_path = "/dev/input/event2"
 lcd_path = "/dev/lcd0"
 line_width = 16
+virus_path = '/etc/rover_virus'
+broken_path = '/etc/rover_broken'
 
 # long int, long int, unsigned short, unsigned short, unsigned int
 FORMAT = 'llHHI'
@@ -91,12 +93,15 @@ class IdleOutput:
 	def get_text(self):
 		return self.text
 
+	def direction_handler(self, direction):
+		return
+
 class CardOutput:
 	def __init__(self, text):
 		self.line = 0
 		self.text = text
 		self.event_file = None
-		LCD.set_message(text[0:32])
+		LCD.set_message(self.get_text_buffer())
 
 	def scroll(self, direction):
 		if (direction == Dir.DOWN):
@@ -113,7 +118,26 @@ class CardOutput:
 		LCD.set_message(self.get_text_buffer())
 
 	def get_text_buffer(self):
-		return self.text[self.line * line_width:self.line * line_width + 2 * line_width]
+		output = self.text[self.line * line_width:self.line * line_width + 2 * line_width]
+		output = list(output.ljust(2 * line_width))
+		if Rover.virus:
+			output[05] = chr(0x07)
+			output[12] = chr(0x07)
+			output[18] = chr(0x07)
+			output[27] = chr(0x07)
+			output[30] = chr(0x07)
+		return "".join(output)
+
+class BrokenOutput:
+	def __init__(self, text):
+		self.text = text
+		LCD.set_message(text[0:32])
+
+	def get_text(self):
+		return self.text
+
+	def direction_handler(self, direction):
+		return
 
 class InputHandler:
 	def __init__(self):
@@ -170,6 +194,48 @@ class InputHandler:
 				for subscriber in self.subscribers:
 					subscriber.direction_handler(direction)
 
+class Rover:
+	virus = None
+	broken = None
+
+	def __init__(self):
+		Rover.virus = os.path.isfile(virus_path)
+		Rover.broken = os.path.isfile(broken_path)
+		return
+
+	# XXX Copy&paste
+	@staticmethod
+	def infect():
+		Rover.virus = True
+		os.system('mount -o remount,rw /')
+		open(virus_path, 'w').close()
+		os.system('sync')
+		os.system('mount -o remount,ro /')
+
+	@staticmethod
+	def aid():
+		Rover.virus = False
+		os.system('mount -o remount,rw /')
+		os.remove(virus_path)
+		os.system('sync')
+		os.system('mount -o remount,ro /')
+
+	@staticmethod
+	def corrupt():
+		Rover.broken = True
+		os.system('mount -o remount,rw /')
+		open(broken_path, 'w').close()
+		os.system('sync')
+		os.system('mount -o remount,ro /')
+
+	@staticmethod
+	def fix():
+		Rover.broken = False
+		os.system('mount -o remount,rw /')
+		os.remove(broken_path)
+		os.system('sync')
+		os.system('mount -o remount,ro /')
+
 def goodbye ():
 	print "Cleaning up"
 	LCD.stop('{:16s}{:16s}'.format('System was', 'stopped.'))
@@ -177,6 +243,7 @@ def goodbye ():
 def main ():
 	atexit.register(goodbye)
 
+	rover = Rover()
 	lcd = LCD()
 
 	card_idle_msg = 'Please insert a memory card.'
@@ -188,17 +255,45 @@ def main ():
 		message_old = message
 		files = glob.glob('/media/*/rover.txt')
 		if (len(files) > 0):
-			with open(files[0]) as f:
-				try:
-					message = f.read()
-				except:
-					message = ''
-					continue
-				if message != message_old or not isinstance(output, CardOutput):
-					input.unsubscribe(output)
-					output = CardOutput(message)
-					input.subscribe(output)
-		elif (not isinstance(output, IdleOutput)):
+			try:
+				with open(files[0]) as f:
+						message = f.read()
+						if message == '*FIX*':
+							if Rover.broken:
+								Rover.fix()
+								input.unsubscribe(output)
+								output = IdleOutput('Firmware has been updated.')
+						elif Rover.broken:
+							pass
+						elif message == '*INFECT*':
+							if not Rover.virus:
+								Rover.infect()
+								input.unsubscribe(output)
+								output = IdleOutput('System has been infected.')
+						elif message == '*AID*':
+							if Rover.virus:
+								Rover.aid()
+								input.unsubscribe(output)
+								output = IdleOutput('Virus has been  cleaned.')
+						elif message == '*BREAK*':
+							if not Rover.broken:
+								Rover.corrupt()
+								input.unsubscribe(output)
+								output = IdleOutput('Firmware has been corrupted.')
+						elif message != message_old or not isinstance(output, CardOutput):
+							print 'Switching to card output'
+							input.unsubscribe(output)
+							output = CardOutput(message)
+							input.subscribe(output)
+			except:
+				message = ''
+				continue
+		elif Rover.broken:
+			if not isinstance(output, BrokenOutput):
+				print 'Going to the broken mode'
+				output = BrokenOutput('System is broken')
+		elif (not isinstance(output, IdleOutput) or message != card_idle_msg):
+			print 'Going to idle'
 			input.unsubscribe(output)
 			output = IdleOutput(card_idle_msg)
 			message = output.get_text()

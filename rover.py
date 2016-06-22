@@ -132,6 +132,37 @@ class CardOutput:
 			output[30] = chr(0x07)
 		return "".join(output)
 
+class ProgressbarOutput:
+	def __init__(self, text):
+		self.text = self.first_line('Preparing...') + self.second_line(0)
+		LCD.set_message(self.text)
+		time.sleep(2.5)
+		self.text = self.first_line(text) + self.second_line(0)
+		LCD.set_message(self.text)
+		time.sleep(1)
+		for percent in range(0, 101):
+			self.text = self.first_line(text) + self.second_line(percent)
+			LCD.set_message(self.text)
+			time.sleep(0.1)
+		time.sleep(2)
+		self.text = self.first_line(text) + 'Done.'
+		LCD.set_message(self.text)
+		time.sleep(4)
+		return
+
+	def get_text(self):
+		return self.text
+
+	def first_line(self, text):
+		return text[0:16].ljust(16)
+
+	def second_line(self, percent):
+		percent = min(100, max(percent, 0))
+		return '[{!s:10}]{:>3}%'.format('=' * (percent/10), percent)
+
+	def direction_handler(self, direction):
+		return
+
 class BrokenOutput:
 	def __init__(self, text):
 		self.garbage = list(text)
@@ -271,24 +302,27 @@ def main ():
 							if Rover.broken:
 								Rover.fix()
 								input.unsubscribe(output)
-								output = IdleOutput('Firmware has been updated.')
+								output = ProgressbarOutput('Updating...')
+								output = IdleOutput('Firmware has    been updated.')
 						elif Rover.broken:
 							pass
 						elif message == '*INFECT*':
 							if not Rover.virus:
 								Rover.infect()
 								input.unsubscribe(output)
+								output = ProgressbarOutput('Infecting...')
 								output = IdleOutput('System has been infected.')
 						elif message == '*AID*':
 							if Rover.virus:
 								Rover.aid()
 								input.unsubscribe(output)
+								output = ProgressbarOutput('Cleaning virus..')
 								output = IdleOutput('Virus has been  cleaned.')
 						elif message == '*BREAK*':
 							if not Rover.broken:
 								Rover.corrupt()
 								input.unsubscribe(output)
-								output = BrokenOutput('Firmware has been corrupted.')
+								output = BrokenOutput('Firmware has    been corrupted.')
 								input.subscribe(output)
 						elif message != message_old or not isinstance(output, CardOutput):
 							print 'Switching to card output'

@@ -13,6 +13,7 @@ import os
 import struct
 import sys
 import select
+import random
 import threading
 import time
 
@@ -132,13 +133,27 @@ class CardOutput:
 
 class BrokenOutput:
 	def __init__(self, text):
-		self.text = text
-		LCD.set_message(text[0:32])
+		self.garbage = list(text)
+		self.garbage.extend([' '] * (line_width * 2 - len(self.garbage)))
+		self.chars = [
+				chr(0x00), chr(0x03), chr(0x07), chr(0x16), chr(0x18), chr(0x19), chr(0x22),
+				'S', 't', 'o', 'u', 'p', 'a',
+				'0', '1',
+				'x', '@', '&', '%', '!', ':', ',', '-',
+				]
+		LCD.set_message("".join(self.garbage[0:32]))
+
+	def randomize(self, garbage):
+		for i in range(4):
+			garbage[random.randint(0, line_width * 2 - 1)] = self.chars[random.randint(0, len(self.chars) - 1)] 
+		return garbage
 
 	def get_text(self):
-		return self.text
+		return self.garbage
 
 	def direction_handler(self, direction):
+		self.garbage = self.randomize(self.garbage)
+		LCD.set_message("".join(self.garbage))
 		return
 
 class InputHandler:
@@ -281,7 +296,8 @@ def main ():
 							if not Rover.broken:
 								Rover.corrupt()
 								input.unsubscribe(output)
-								output = IdleOutput('Firmware has been corrupted.')
+								output = BrokenOutput('Firmware has been corrupted.')
+								input.subscribe(output)
 						elif message != message_old or not isinstance(output, CardOutput):
 							print 'Switching to card output'
 							input.unsubscribe(output)
@@ -293,7 +309,9 @@ def main ():
 		elif Rover.broken:
 			if not isinstance(output, BrokenOutput):
 				print 'Going to the broken mode'
+				input.unsubscribe(output)
 				output = BrokenOutput('System is broken')
+				input.subscribe(output)
 		elif (not isinstance(output, IdleOutput) or message != card_idle_msg):
 			print 'Going to idle'
 			input.unsubscribe(output)

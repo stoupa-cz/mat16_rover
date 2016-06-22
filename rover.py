@@ -220,38 +220,29 @@ class Rover:
 		Rover.broken = os.path.isfile(broken_path)
 		return
 
-	# XXX Copy&paste
 	@staticmethod
 	def infect():
 		Rover.virus = True
-		os.system('mount -o remount,rw /')
 		open(virus_path, 'w').close()
 		os.system('sync')
-		os.system('mount -o remount,ro /')
 
 	@staticmethod
 	def aid():
 		Rover.virus = False
-		os.system('mount -o remount,rw /')
 		os.remove(virus_path)
 		os.system('sync')
-		os.system('mount -o remount,ro /')
 
 	@staticmethod
 	def corrupt():
 		Rover.broken = True
-		os.system('mount -o remount,rw /')
 		open(broken_path, 'w').close()
 		os.system('sync')
-		os.system('mount -o remount,ro /')
 
 	@staticmethod
 	def fix():
 		Rover.broken = False
-		os.system('mount -o remount,rw /')
 		os.remove(broken_path)
 		os.system('sync')
-		os.system('mount -o remount,ro /')
 
 def goodbye ():
 	print "Cleaning up"

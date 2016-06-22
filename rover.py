@@ -121,9 +121,11 @@ class CardOutput:
 		output = self.text[self.line * line_width:self.line * line_width + 2 * line_width]
 		output = list(output.ljust(2 * line_width))
 		if Rover.virus:
+			output[04] = chr(0x07)
 			output[05] = chr(0x07)
 			output[12] = chr(0x07)
 			output[18] = chr(0x07)
+			output[22] = chr(0x07)
 			output[27] = chr(0x07)
 			output[30] = chr(0x07)
 		return "".join(output)

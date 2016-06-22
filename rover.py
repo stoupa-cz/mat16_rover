@@ -8,6 +8,7 @@
 # http://stackoverflow.com/questions/5060710/format-of-dev-input-event/16682549
 
 import atexit
+import coder
 import glob
 import os
 import struct
@@ -261,11 +262,11 @@ def main ():
 
 	while (True):
 		message_old = message
-		files = glob.glob('/media/*/rover.txt')
+		files = glob.glob('/media/*/rover.bin')
 		if (len(files) > 0):
 			try:
 				with open(files[0]) as f:
-						message = f.read()
+						message = coder.decode(f.read())
 						if message == '*FIX*':
 							if Rover.broken:
 								Rover.fix()

@@ -266,7 +266,7 @@ def main ():
 		if (len(files) > 0):
 			try:
 				with open(files[0]) as f:
-						message = coder.decode(f.read())
+						message = coder.decode(f.read()).strip().replace("\n", chr(0x17))
 						if message == '*FIX*':
 							if Rover.broken:
 								Rover.fix()

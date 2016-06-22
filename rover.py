@@ -286,7 +286,7 @@ def main ():
 	rover = Rover()
 	lcd = LCD()
 
-	card_idle_msg = 'Please insert a memory card.'
+	card_idle_msg = 'Please insert   a memory card.'
 	output = IdleOutput(card_idle_msg)
 	input = InputHandler()
 	message = LCD.get_message()
